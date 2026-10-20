@@ -61,12 +61,15 @@ class CliPresenter(PresenterPort):
             label = f"  {f.source_path.name} ({f.file_type.value})"
             if f.file_type == FileType.PHOTO and f.exif_fix and f.exif_fix.has_fixes:
                 fixes = []
-                if f.exif_fix.fixed_lens_model or f.exif_fix.fixed_f_number is not None:
+                if (f.exif_fix.fixed_lens_model or f.exif_fix.fixed_f_number is not None
+                        or f.exif_fix.fixed_focal_length_35mm is not None):
                     fixes.append("lens: manufacturer data")
                 if f.exif_fix.fixed_make or f.exif_fix.fixed_model:
                     fixes.append("camera: Kodak Charmera")
-                if f.exif_fix.fixed_modify_date:
-                    fixes.append("date")
+                if (f.exif_fix.fixed_modify_date or f.exif_fix.fixed_datetime_original
+                        or f.exif_fix.fixed_create_date):
+                    fixes.append("date from file time" if f.exif_fix.dates_from_file_time
+                                 else "date")
                 if f.exif_fix.fixed_width:
                     fixes.append("dimensions")
                 label += f" [fix: {', '.join(fixes)}]"

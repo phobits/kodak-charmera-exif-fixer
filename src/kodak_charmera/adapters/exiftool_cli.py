@@ -19,7 +19,8 @@ class ExiftoolCliAdapter(ExiftoolPort):
                 "-ExifImageWidth", "-ExifImageHeight",
                 "-ModifyDate", "-DateTimeOriginal", "-CreateDate",
                 "-EXIF:Make", "-EXIF:Model",
-                "-EXIF:LensModel", "-EXIF:FNumber", "-EXIF:UserComment",
+                "-EXIF:LensModel", "-EXIF:FNumber", "-EXIF:FocalLengthIn35mmFormat#",
+                "-EXIF:UserComment",
                 str(file_path),
             ],
             capture_output=True, text=True, check=True,
@@ -37,6 +38,7 @@ class ExiftoolCliAdapter(ExiftoolPort):
             model=data.get("Model"),
             lens_model=data.get("LensModel"),
             f_number=data.get("FNumber"),
+            focal_length_35mm=data.get("FocalLengthIn35mmFormat"),
             user_comment=data.get("UserComment"),
         )
 
@@ -66,6 +68,7 @@ class ExiftoolCliAdapter(ExiftoolPort):
         model: str | None = None,
         lens_model: str | None = None,
         f_number: float | None = None,
+        focal_length_35mm: int | None = None,
         user_comment: str | None = None,
     ) -> None:
         # Rebuild EXIF first to fix corrupt structure from Charmera
@@ -81,6 +84,7 @@ class ExiftoolCliAdapter(ExiftoolPort):
             "EXIF:Model": model,
             "EXIF:LensModel": lens_model,
             "EXIF:FNumber": f_number,
+            "EXIF:FocalLengthIn35mmFormat": focal_length_35mm,
             "EXIF:UserComment": user_comment,
         }
         args = [self._exe, "-overwrite_original"]

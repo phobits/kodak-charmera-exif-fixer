@@ -21,14 +21,16 @@ class CameraMetadataTests(unittest.TestCase):
                           exif_fix=fix, destination_path=Path('copy.jpg'))
         self.exif.read_exif.return_value = ExifData(
             make='Kodak', model='Charmera', lens_model=fix.fixed_lens_model,
-            f_number=fix.fixed_f_number, user_comment=fix.fixed_user_comment)
+            f_number=fix.fixed_f_number, focal_length_35mm=fix.fixed_focal_length_35mm,
+            user_comment=fix.fixed_user_comment)
         ExifFixer(self.exif).fix(file)
         kwargs = self.exif.write_exif.call_args.kwargs
         self.assertEqual((kwargs['make'], kwargs['model']), ('Kodak', 'Charmera'))
 
     def test_correct_camera_needs_no_repair(self):
         self.assertFalse(self.scanner._compute_exif_fix(
-            ExifData(make='Kodak', model='Charmera', lens_model='Existing lens', f_number=2.4)).has_fixes)
+            ExifData(make='Kodak', model='Charmera', lens_model='Existing lens', f_number=2.4,
+                     focal_length_35mm=35)).has_fixes)
 
     def test_chipset_metadata_is_replaced(self):
         fix = self.scanner._compute_exif_fix(ExifData(make='Generalplus', model='CBB3'))
@@ -44,7 +46,8 @@ class CameraMetadataTests(unittest.TestCase):
 
     def test_existing_lens_and_aperture_are_preserved(self):
         fix = self.scanner._compute_exif_fix(ExifData(
-            lens_model='Recorded lens', f_number=2.8, user_comment='Personal note'))
+            lens_model='Recorded lens', f_number=2.8, focal_length_35mm=35,
+            user_comment='Personal note'))
         self.assertIsNone(fix.fixed_lens_model)
         self.assertIsNone(fix.fixed_f_number)
         self.assertIsNone(fix.fixed_user_comment)
@@ -55,3 +58,76 @@ class CameraMetadataTests(unittest.TestCase):
         self.assertTrue(fix.fixed_user_comment.startswith('Personal note\n'))
         self.assertIn('not measured exposure', fix.fixed_user_comment)
         self.assertEqual((fix.fixed_width, fix.fixed_height), (1440, 1080))
+
+    def test_missing_dates_are_taken_from_file_time(self):
+        fix = self.scanner._compute_exif_fix(ExifData(), datetime(2026, 10, 3, 13, 52, 32))
+        self.assertEqual(
+            (fix.fixed_modify_date, fix.fixed_datetime_original, fix.fixed_create_date),
+            ('2026:10:03 13:52:32',) * 3)
+        self.assertTrue(fix.dates_from_file_time)
+        self.assertIn('file modification time', fix.fixed_user_comment)
+
+    def test_placeholder_dates_count_as_missing(self):
+        fix = self.scanner._compute_exif_fix(ExifData(
+            modify_date='0000:00:00 00:00:00', datetime_original='    :  :     :  :  ',
+            create_date=''), datetime(2026, 10, 3, 13, 52, 32))
+        self.assertEqual(fix.fixed_datetime_original, '2026:10:03 13:52:32')
+        self.assertEqual(fix.fixed_modify_date, '2026:10:03 13:52:32')
+        self.assertTrue(fix.dates_from_file_time)
+
+    def test_camera_date_fills_sibling_fields_before_file_time(self):
+        fix = self.scanner._compute_exif_fix(ExifData(
+            datetime_original='2026:03:03 12:16:29', lens_model='Recorded lens', f_number=2.4,
+            focal_length_35mm=35), datetime(2026, 10, 3, 13, 52, 32))
+        self.assertIsNone(fix.fixed_datetime_original)
+        self.assertEqual((fix.fixed_modify_date, fix.fixed_create_date),
+                         ('2026:03:03 12:16:29',) * 2)
+        self.assertFalse(fix.dates_from_file_time)
+        self.assertIsNone(fix.fixed_user_comment)
+
+    def test_malformed_camera_dates_win_over_file_time(self):
+        fix = self.scanner._compute_exif_fix(ExifData(
+            modify_date='2026:03:03:12:16:29', datetime_original='2026:03:03:12:16:29',
+            create_date='2026:03:03:12:16:29'), datetime(2026, 10, 3, 13, 52, 32))
+        self.assertEqual(fix.fixed_datetime_original, '2026:03:03 12:16:29')
+        self.assertFalse(fix.dates_from_file_time)
+        self.assertNotIn('file modification time', fix.fixed_user_comment)
+
+    def test_valid_dates_are_left_alone(self):
+        fix = self.scanner._compute_exif_fix(ExifData(
+            modify_date='2026:03:03 12:16:29', datetime_original='2026:03:03 12:16:29',
+            create_date='2026:03:03 12:16:29'), datetime(2026, 10, 3, 13, 52, 32))
+        self.assertEqual(
+            (fix.fixed_modify_date, fix.fixed_datetime_original, fix.fixed_create_date),
+            (None, None, None))
+
+    def test_missing_focal_length_gets_35mm_equivalent_only(self):
+        fix = self.scanner._compute_exif_fix(ExifData())
+        self.assertEqual(fix.fixed_focal_length_35mm, 35)
+        self.assertIn('actual FocalLength', fix.fixed_user_comment)
+        self.assertIsNone(self.scanner._compute_exif_fix(
+            ExifData(focal_length_35mm=28)).fixed_focal_length_35mm)
+
+    def test_date_only_note_has_no_lens_source(self):
+        fix = self.scanner._compute_exif_fix(ExifData(
+            lens_model='Recorded lens', f_number=2.4, focal_length_35mm=35),
+            datetime(2026, 10, 3, 13, 52, 32))
+        self.assertIn('file modification time', fix.fixed_user_comment)
+        self.assertNotIn('Source:', fix.fixed_user_comment)
+
+    def test_dates_with_timezone_are_kept(self):
+        fix = self.scanner._compute_exif_fix(ExifData(
+            modify_date='2026:03:03 12:16:29+02:00', datetime_original='2026:03:03 12:16:29.50',
+            create_date='2026:03:03 12:16:29'), datetime(2026, 10, 3, 13, 52, 32))
+        self.assertEqual(
+            (fix.fixed_modify_date, fix.fixed_datetime_original, fix.fixed_create_date),
+            (None, None, None))
+
+    def test_numeric_date_value_counts_as_missing(self):
+        fix = self.scanner._compute_exif_fix(ExifData(datetime_original=0),
+                                             datetime(2026, 10, 3, 13, 52, 32))
+        self.assertEqual(fix.fixed_datetime_original, '2026:10:03 13:52:32')
+
+    def test_zero_focal_length_counts_as_unknown(self):
+        self.assertEqual(self.scanner._compute_exif_fix(
+            ExifData(focal_length_35mm=0)).fixed_focal_length_35mm, 35)

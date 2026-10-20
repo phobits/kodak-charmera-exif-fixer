@@ -24,6 +24,7 @@ class ExiftoolPort(ABC):
         model: str | None = None,
         lens_model: str | None = None,
         f_number: float | None = None,
+        focal_length_35mm: int | None = None,
         user_comment: str | None = None,
     ) -> None:
         ...

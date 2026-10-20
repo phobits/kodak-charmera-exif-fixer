@@ -13,7 +13,7 @@ Use the desktop window or a compact live terminal display.
 | :--- | :--- |
 | Sets camera to **Kodak / Charmera** | Finds SD cards regardless of their name |
 | Adds missing lens info & nominal **f/2.4** | Includes files in DCIM subfolders |
-| Fixes malformed EXIF date formatting | Offers desktop and terminal workflows |
+| Fixes or fills in EXIF capture dates | Offers desktop and terminal workflows |
 | Corrects mismatched EXIF dimensions | Asks before replacing existing output |
 | Converts AVI → **H.264 + AAC MP4** | Processes temporary copies before publishing |
 | Preserves file modification times | Leaves files on the source card unchanged |
@@ -73,14 +73,16 @@ Set `NO_COLOR=1` to disable colors.
   `Model=Charmera`, replacing different values. Use this tool for Charmera photos;
   DCIM detection does not identify the camera model.
 - 🗓️ **Dates:** repairs formatting such as `2026:03:03:12:16:29` → `2026:03:03 12:16:29`.
-  It does not correct a wrongly set camera clock. Video dates use the source file's
-  modification time.
+  Missing or placeholder dates (`0000:00:00 00:00:00`) are filled from another date of
+  the same photo; if the camera wrote none, from the source file's modification time,
+  noted in the EXIF user comment. It does not correct a wrongly set camera clock. Video
+  dates use the source file's modification time.
 - 🔎 **Lens:** fills missing lens identification and nominal **f/2.4** from the
   [manufacturer specifications](https://www.kodak.retopro.co/products/kodak-charmera-br-keychain-digital-camera-blind-box),
   recording provenance in the EXIF user comment. Existing lens/aperture values are
-  preserved. The ambiguous advertised “35mm” is documented only in that comment;
-  numeric focal length, ISO and shutter speed are never invented. Missing EXIF
-  dimensions are filled from the JPEG itself.
+  preserved. The advertised “35mm” is the 35mm-equivalent and is written only as
+  `FocalLengthIn35mmFormat`; the actual `FocalLength`, ISO and shutter speed are never
+  invented. Missing EXIF dimensions are filled from the JPEG itself.
 - 📂 **Output:** timestamp-based names such as `IMG_20260906_120000.jpg` and
   `VID_20260906_120000.mp4`. Conflicts are name-based, not content-based deduplication.
   By default, the temporary AVI copy is removed after conversion; the source AVI stays.
