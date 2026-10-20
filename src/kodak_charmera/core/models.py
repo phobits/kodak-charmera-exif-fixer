@@ -33,6 +33,7 @@ class ExifData:
     model: Optional[str] = None
     lens_model: Optional[str] = None
     f_number: Optional[float] = None
+    focal_length: Optional[float] = None
     focal_length_35mm: Optional[int] = None
     user_comment: Optional[str] = None
 
@@ -48,6 +49,7 @@ class ExifFix:
     fixed_model: Optional[str] = None
     fixed_lens_model: Optional[str] = None
     fixed_f_number: Optional[float] = None
+    fixed_focal_length: Optional[float] = None
     fixed_focal_length_35mm: Optional[int] = None
     fixed_user_comment: Optional[str] = None
     # Not a tag: marks dates above as taken from the file time rather than the camera.
@@ -65,6 +67,7 @@ class ExifFix:
             self.fixed_model,
             self.fixed_lens_model,
             self.fixed_f_number,
+            self.fixed_focal_length,
             self.fixed_focal_length_35mm,
             self.fixed_user_comment,
         ])

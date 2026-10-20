@@ -69,23 +69,27 @@ class CameraScanner:
         dates_from_file_time = camera_date is None and fallback is not None
         lens_model = "Kodak Charmera built-in lens" if not exif.lens_model else None
         f_number = 2.4 if exif.f_number is None else None
-        # EXIF defines FocalLengthIn35mmFormat=0 as unknown.
-        focal_35mm = 35 if not exif.focal_length_35mm else None
+        # EXIF defines a focal length of 0 as unknown. Both tags are filled together so
+        # they never contradict a real value the camera already recorded.
+        focal_unknown = not exif.focal_length and not exif.focal_length_35mm
+        focal = 35.0 if focal_unknown else None
+        focal_35mm = 35 if focal_unknown else None
         comment = None
         added = []
         if lens_model:
             added.append("LensModel is a descriptive label")
         if f_number is not None:
             added.append("FNumber=2.4 is the nominal manufacturer aperture, not measured exposure")
-        if focal_35mm is not None:
-            added.append("FocalLengthIn35mmFormat=35 is the advertised 35mm-equivalent; "
-                         "the actual FocalLength of the 1/4-inch sensor lens is not inferred")
+        if focal_unknown:
+            added.append("FocalLength/FocalLengthIn35mmFormat=35 is the advertised "
+                         "35mm-equivalent, written to FocalLength for display; the actual "
+                         "focal length of the 1/4-inch sensor lens is shorter")
         if dates_from_file_time:
             added.append("the camera wrote no capture date, so all dates were taken from "
                          "the file modification time")
         if added:
             note = "Charmera EXIF Fixer: " + "; ".join(added) + "."
-            if lens_model or f_number is not None or focal_35mm is not None:
+            if lens_model or f_number is not None or focal_unknown:
                 note += (" Manufacturer lists lens as 35mm F2.4. Source: "
                          "https://www.kodak.retopro.co/products/"
                          "kodak-charmera-br-keychain-digital-camera-blind-box")
@@ -93,6 +97,7 @@ class CameraScanner:
         return ExifFix(
             fixed_lens_model=lens_model,
             fixed_f_number=f_number,
+            fixed_focal_length=focal,
             fixed_focal_length_35mm=focal_35mm,
             fixed_user_comment=comment,
             fixed_modify_date=dates[0],

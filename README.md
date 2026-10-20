@@ -80,8 +80,9 @@ Set `NO_COLOR=1` to disable colors.
 - 🔎 **Lens:** fills missing lens identification and nominal **f/2.4** from the
   [manufacturer specifications](https://www.kodak.retopro.co/products/kodak-charmera-br-keychain-digital-camera-blind-box),
   recording provenance in the EXIF user comment. Existing lens/aperture values are
-  preserved. The advertised “35mm” is the 35mm-equivalent and is written only as
-  `FocalLengthIn35mmFormat`; the actual `FocalLength`, ISO and shutter speed are never
+  preserved. The advertised “35mm” (a 35mm-equivalent) is written to both `FocalLength`
+  and `FocalLengthIn35mmFormat`, so photo apps such as Lightroom display it; the true
+  focal length of the tiny sensor lens is shorter. ISO and shutter speed are never
   invented. Missing EXIF dimensions are filled from the JPEG itself.
 - 📂 **Output:** timestamp-based names such as `IMG_20260906_120000.jpg` and
   `VID_20260906_120000.mp4`. Conflicts are name-based, not content-based deduplication.

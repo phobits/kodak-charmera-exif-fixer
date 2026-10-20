@@ -294,7 +294,8 @@ class TkinterPresenter(PresenterPort):
         if f.exif_fix and f.exif_fix.has_fixes:
             fixes = []
             if (f.exif_fix.fixed_lens_model or f.exif_fix.fixed_f_number is not None
-                    or f.exif_fix.fixed_focal_length_35mm is not None):
+                    or f.exif_fix.fixed_focal_length_35mm is not None
+                    or f.exif_fix.fixed_focal_length is not None):
                 fixes.append("lens: manufacturer data")
             if f.exif_fix.fixed_make or f.exif_fix.fixed_model:
                 fixes.append("camera: Kodak Charmera")

@@ -26,6 +26,7 @@ class ExifFixer:
             model=fix.fixed_model,
             lens_model=fix.fixed_lens_model,
             f_number=fix.fixed_f_number,
+            focal_length=fix.fixed_focal_length,
             focal_length_35mm=fix.fixed_focal_length_35mm,
             user_comment=fix.fixed_user_comment,
         )
@@ -40,6 +41,7 @@ class ExifFixer:
             ("model", fix.fixed_model),
             ("lens_model", fix.fixed_lens_model),
             ("f_number", fix.fixed_f_number),
+            ("focal_length", fix.fixed_focal_length),
             ("focal_length_35mm", fix.fixed_focal_length_35mm),
             ("user_comment", fix.fixed_user_comment),
         ):

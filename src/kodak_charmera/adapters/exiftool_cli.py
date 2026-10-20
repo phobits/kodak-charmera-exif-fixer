@@ -19,7 +19,8 @@ class ExiftoolCliAdapter(ExiftoolPort):
                 "-ExifImageWidth", "-ExifImageHeight",
                 "-ModifyDate", "-DateTimeOriginal", "-CreateDate",
                 "-EXIF:Make", "-EXIF:Model",
-                "-EXIF:LensModel", "-EXIF:FNumber", "-EXIF:FocalLengthIn35mmFormat#",
+                "-EXIF:LensModel", "-EXIF:FNumber", "-EXIF:FocalLength#",
+                "-EXIF:FocalLengthIn35mmFormat#",
                 "-EXIF:UserComment",
                 str(file_path),
             ],
@@ -38,6 +39,7 @@ class ExiftoolCliAdapter(ExiftoolPort):
             model=data.get("Model"),
             lens_model=data.get("LensModel"),
             f_number=data.get("FNumber"),
+            focal_length=data.get("FocalLength"),
             focal_length_35mm=data.get("FocalLengthIn35mmFormat"),
             user_comment=data.get("UserComment"),
         )
@@ -68,6 +70,7 @@ class ExiftoolCliAdapter(ExiftoolPort):
         model: str | None = None,
         lens_model: str | None = None,
         f_number: float | None = None,
+        focal_length: float | None = None,
         focal_length_35mm: int | None = None,
         user_comment: str | None = None,
     ) -> None:
@@ -84,6 +87,7 @@ class ExiftoolCliAdapter(ExiftoolPort):
             "EXIF:Model": model,
             "EXIF:LensModel": lens_model,
             "EXIF:FNumber": f_number,
+            "EXIF:FocalLength": focal_length,
             "EXIF:FocalLengthIn35mmFormat": focal_length_35mm,
             "EXIF:UserComment": user_comment,
         }

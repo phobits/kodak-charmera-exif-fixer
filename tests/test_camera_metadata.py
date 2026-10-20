@@ -21,7 +21,8 @@ class CameraMetadataTests(unittest.TestCase):
                           exif_fix=fix, destination_path=Path('copy.jpg'))
         self.exif.read_exif.return_value = ExifData(
             make='Kodak', model='Charmera', lens_model=fix.fixed_lens_model,
-            f_number=fix.fixed_f_number, focal_length_35mm=fix.fixed_focal_length_35mm,
+            f_number=fix.fixed_f_number, focal_length=fix.fixed_focal_length,
+            focal_length_35mm=fix.fixed_focal_length_35mm,
             user_comment=fix.fixed_user_comment)
         ExifFixer(self.exif).fix(file)
         kwargs = self.exif.write_exif.call_args.kwargs
@@ -30,7 +31,7 @@ class CameraMetadataTests(unittest.TestCase):
     def test_correct_camera_needs_no_repair(self):
         self.assertFalse(self.scanner._compute_exif_fix(
             ExifData(make='Kodak', model='Charmera', lens_model='Existing lens', f_number=2.4,
-                     focal_length_35mm=35)).has_fixes)
+                     focal_length=35.0, focal_length_35mm=35)).has_fixes)
 
     def test_chipset_metadata_is_replaced(self):
         fix = self.scanner._compute_exif_fix(ExifData(make='Generalplus', model='CBB3'))
@@ -46,7 +47,7 @@ class CameraMetadataTests(unittest.TestCase):
 
     def test_existing_lens_and_aperture_are_preserved(self):
         fix = self.scanner._compute_exif_fix(ExifData(
-            lens_model='Recorded lens', f_number=2.8, focal_length_35mm=35,
+            lens_model='Recorded lens', f_number=2.8, focal_length=35.0, focal_length_35mm=35,
             user_comment='Personal note'))
         self.assertIsNone(fix.fixed_lens_model)
         self.assertIsNone(fix.fixed_f_number)
@@ -78,7 +79,7 @@ class CameraMetadataTests(unittest.TestCase):
     def test_camera_date_fills_sibling_fields_before_file_time(self):
         fix = self.scanner._compute_exif_fix(ExifData(
             datetime_original='2026:03:03 12:16:29', lens_model='Recorded lens', f_number=2.4,
-            focal_length_35mm=35), datetime(2026, 10, 3, 13, 52, 32))
+            focal_length=35.0, focal_length_35mm=35), datetime(2026, 10, 3, 13, 52, 32))
         self.assertIsNone(fix.fixed_datetime_original)
         self.assertEqual((fix.fixed_modify_date, fix.fixed_create_date),
                          ('2026:03:03 12:16:29',) * 2)
@@ -101,16 +102,18 @@ class CameraMetadataTests(unittest.TestCase):
             (fix.fixed_modify_date, fix.fixed_datetime_original, fix.fixed_create_date),
             (None, None, None))
 
-    def test_missing_focal_length_gets_35mm_equivalent_only(self):
+    def test_missing_focal_length_gets_35mm_equivalent(self):
         fix = self.scanner._compute_exif_fix(ExifData())
-        self.assertEqual(fix.fixed_focal_length_35mm, 35)
-        self.assertIn('actual FocalLength', fix.fixed_user_comment)
-        self.assertIsNone(self.scanner._compute_exif_fix(
-            ExifData(focal_length_35mm=28)).fixed_focal_length_35mm)
+        self.assertEqual((fix.fixed_focal_length, fix.fixed_focal_length_35mm), (35, 35))
+        self.assertIn('35mm-equivalent', fix.fixed_user_comment)
+        for recorded in (ExifData(focal_length=4.0), ExifData(focal_length_35mm=28),
+                         ExifData(focal_length=4.0, focal_length_35mm=0)):
+            fix = self.scanner._compute_exif_fix(recorded)
+            self.assertEqual((fix.fixed_focal_length, fix.fixed_focal_length_35mm), (None, None))
 
     def test_date_only_note_has_no_lens_source(self):
         fix = self.scanner._compute_exif_fix(ExifData(
-            lens_model='Recorded lens', f_number=2.4, focal_length_35mm=35),
+            lens_model='Recorded lens', f_number=2.4, focal_length=35.0, focal_length_35mm=35),
             datetime(2026, 10, 3, 13, 52, 32))
         self.assertIn('file modification time', fix.fixed_user_comment)
         self.assertNotIn('Source:', fix.fixed_user_comment)
@@ -130,4 +133,4 @@ class CameraMetadataTests(unittest.TestCase):
 
     def test_zero_focal_length_counts_as_unknown(self):
         self.assertEqual(self.scanner._compute_exif_fix(
-            ExifData(focal_length_35mm=0)).fixed_focal_length_35mm, 35)
+            ExifData(focal_length=0, focal_length_35mm=0)).fixed_focal_length_35mm, 35)
