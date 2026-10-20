@@ -25,8 +25,8 @@ class CameraMetadataTests(unittest.TestCase):
             focal_length_35mm=fix.fixed_focal_length_35mm,
             user_comment=fix.fixed_user_comment)
         ExifFixer(self.exif).fix(file)
-        kwargs = self.exif.write_exif.call_args.kwargs
-        self.assertEqual((kwargs['make'], kwargs['model']), ('Kodak', 'Charmera'))
+        values = self.exif.write_exif.call_args.args[1]
+        self.assertEqual((values['make'], values['model']), ('Kodak', 'Charmera'))
 
     def test_correct_camera_needs_no_repair(self):
         self.assertFalse(self.scanner._compute_exif_fix(
@@ -58,7 +58,7 @@ class CameraMetadataTests(unittest.TestCase):
             user_comment='Personal note', actual_image_width=1440, actual_image_height=1080))
         self.assertTrue(fix.fixed_user_comment.startswith('Personal note\n'))
         self.assertIn('not measured exposure', fix.fixed_user_comment)
-        self.assertEqual((fix.fixed_width, fix.fixed_height), (1440, 1080))
+        self.assertEqual((fix.fixed_exif_image_width, fix.fixed_exif_image_height), (1440, 1080))
 
     def test_missing_dates_are_taken_from_file_time(self):
         fix = self.scanner._compute_exif_fix(ExifData(), datetime(2026, 10, 3, 13, 52, 32))
@@ -110,6 +110,8 @@ class CameraMetadataTests(unittest.TestCase):
                          ExifData(focal_length=4.0, focal_length_35mm=0)):
             fix = self.scanner._compute_exif_fix(recorded)
             self.assertEqual((fix.fixed_focal_length, fix.fixed_focal_length_35mm), (None, None))
+        fix = self.scanner._compute_exif_fix(ExifData(focal_length_35mm=35))
+        self.assertEqual((fix.fixed_focal_length, fix.fixed_focal_length_35mm), (35.0, None))
 
     def test_date_only_note_has_no_lens_source(self):
         fix = self.scanner._compute_exif_fix(ExifData(
@@ -134,3 +136,58 @@ class CameraMetadataTests(unittest.TestCase):
     def test_zero_focal_length_counts_as_unknown(self):
         self.assertEqual(self.scanner._compute_exif_fix(
             ExifData(focal_length=0, focal_length_35mm=0)).fixed_focal_length_35mm, 35)
+
+    def test_modify_date_never_becomes_capture_date(self):
+        fix = self.scanner._compute_exif_fix(ExifData(modify_date='2026:10:19 08:00:00'),
+                                             datetime(2026, 10, 3, 13, 52, 32))
+        self.assertIsNone(fix.fixed_modify_date)
+        self.assertEqual((fix.fixed_datetime_original, fix.fixed_create_date),
+                         ('2026:10:03 13:52:32',) * 2)
+        self.assertTrue(fix.dates_from_file_time)
+
+    def test_rerun_replaces_old_fixer_note(self):
+        old = ('Personal note\nCharmera EXIF Fixer: LensModel is a descriptive label; '
+               'FNumber=2.4 is the nominal manufacturer aperture, not measured exposure. '
+               'Manufacturer lists lens as 35mm F2.4; focal length fields are not inferred. '
+               'Source: https://example.invalid')
+        fix = self.scanner._compute_exif_fix(ExifData(
+            lens_model='Kodak Charmera built-in lens', f_number=2.4, user_comment=old,
+            datetime_original='2026:03:03 12:16:29', create_date='2026:03:03 12:16:29',
+            modify_date='2026:03:03 12:16:29'))
+        comment = fix.fixed_user_comment
+        self.assertTrue(comment.startswith('Personal note\nCharmera EXIF Fixer: '))
+        self.assertEqual(comment.count('Charmera EXIF Fixer:'), 1)
+        self.assertIn('LensModel is a descriptive label', comment)
+        self.assertIn('FocalLength/FocalLengthIn35mmFormat=35', comment)
+        self.assertNotIn('not inferred', comment)
+
+    def test_rerun_on_fixed_photo_changes_nothing(self):
+        first = self.scanner._compute_exif_fix(ExifData(), datetime(2026, 10, 3, 13, 52, 32))
+        fixed = ExifData(**{name: value for name, value in first.values().items()})
+        self.assertFalse(self.scanner._compute_exif_fix(
+            fixed, datetime(2026, 10, 3, 13, 52, 32)).has_fixes)
+
+    def test_labels_are_shared_by_presenters(self):
+        fix = self.scanner._compute_exif_fix(ExifData(), datetime(2026, 10, 3, 13, 52, 32))
+        self.assertEqual(fix.labels(), ['lens: manufacturer data', 'camera: Kodak Charmera',
+                                        'date from file time'])
+
+    def test_note_rewrite_keeps_user_text_and_drops_every_old_note(self):
+        old = ('Personal note\n\n'
+               'Charmera EXIF Fixer: the camera wrote no capture date, so all dates were taken '
+               'from the file modification time.\n'
+               'Charmera EXIF Fixer: FocalLength/FocalLengthIn35mmFormat=35 is the advertised '
+               '35mm-equivalent, written to FocalLength for display; the actual focal length '
+               'of the 1/4-inch sensor lens is shorter. Manufacturer lists lens as 35mm F2.4.\n'
+               'later text')
+        note = self.scanner._merge_note(old, {'lens'})
+        user, _, fixer = note.rpartition('\n')
+        self.assertEqual(user, 'Personal note\n\nlater text')
+        self.assertEqual(fixer.count('Charmera EXIF Fixer:'), 1)
+        self.assertNotIn('; the actual', fixer)
+        for clause in ('LensModel is', 'FocalLength/', 'file modification time'):
+            self.assertIn(clause, fixer)
+
+    def test_comment_only_fix_has_a_label(self):
+        from kodak_charmera.core.models import ExifFix
+        self.assertEqual(ExifFix(fixed_user_comment='x').labels(), ['provenance note'])

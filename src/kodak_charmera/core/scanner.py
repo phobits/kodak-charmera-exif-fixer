@@ -9,6 +9,23 @@ from ..ports.filesystem_port import FilesystemPort
 
 PHOTO_EXTENSIONS = frozenset({".jpg", ".jpeg"})
 VIDEO_EXTENSIONS = frozenset({".avi"})
+_NOTE_PREFIX = "Charmera EXIF Fixer: "
+_NOTE_CLAUSES = {
+    "lens": "LensModel is a descriptive label",
+    "aperture": "FNumber=2.4 is the nominal manufacturer aperture, not measured exposure",
+    "focal": ("FocalLength/FocalLengthIn35mmFormat=35 is the advertised 35mm-equivalent, "
+              "written to FocalLength for display, although the actual focal length of the "
+              "1/4-inch sensor lens is shorter"),
+    "dates": ("the camera wrote no capture date, so missing dates were taken from the file "
+              "modification time"),
+}
+# Clause openings written by this and earlier versions of the note.
+_NOTE_MARKERS = {
+    "lens": ("LensModel is",),
+    "aperture": ("FNumber=2.4",),
+    "focal": ("FocalLength/", "FocalLengthIn35mmFormat=35"),
+    "dates": ("the camera wrote no capture date", "missing capture dates"),
+}
 
 
 class CameraScanner:
@@ -60,40 +77,25 @@ class CameraScanner:
     ) -> ExifFix:
         raw_dates = (exif.modify_date, exif.datetime_original, exif.create_date)
         valid_dates = [self._normalize_date(raw) for raw in raw_dates]
-        # Missing fields reuse a camera date of the same photo; the camera often writes
-        # no EXIF at all, and then the file time is the only date source left.
-        camera_date = next((d for d in (valid_dates[1], valid_dates[2], valid_dates[0]) if d), None)
-        fallback = camera_date or (self._format_date(file_modified) if file_modified else None)
+        # A missing date reuses the capture date of the same photo. ModifyDate may be a
+        # later edit time, so it never stands in for one; without a capture date the file
+        # time is the only source left (the camera often writes no EXIF at all).
+        capture_date = valid_dates[1] or valid_dates[2]
+        file_time = self._format_date(file_modified) if file_modified else None
+        fallback = capture_date or file_time
         dates = [None if valid is not None and valid == raw else valid or fallback
                  for raw, valid in zip(raw_dates, valid_dates)]
-        dates_from_file_time = camera_date is None and fallback is not None
+        dates_from_file_time = capture_date is None and file_time is not None
         lens_model = "Kodak Charmera built-in lens" if not exif.lens_model else None
         f_number = 2.4 if exif.f_number is None else None
-        # EXIF defines a focal length of 0 as unknown. Both tags are filled together so
-        # they never contradict a real value the camera already recorded.
-        focal_unknown = not exif.focal_length and not exif.focal_length_35mm
-        focal = 35.0 if focal_unknown else None
-        focal_35mm = 35 if focal_unknown else None
-        comment = None
-        added = []
-        if lens_model:
-            added.append("LensModel is a descriptive label")
-        if f_number is not None:
-            added.append("FNumber=2.4 is the nominal manufacturer aperture, not measured exposure")
-        if focal_unknown:
-            added.append("FocalLength/FocalLengthIn35mmFormat=35 is the advertised "
-                         "35mm-equivalent, written to FocalLength for display; the actual "
-                         "focal length of the 1/4-inch sensor lens is shorter")
-        if dates_from_file_time:
-            added.append("the camera wrote no capture date, so all dates were taken from "
-                         "the file modification time")
-        if added:
-            note = "Charmera EXIF Fixer: " + "; ".join(added) + "."
-            if lens_model or f_number is not None or focal_unknown:
-                note += (" Manufacturer lists lens as 35mm F2.4. Source: "
-                         "https://www.kodak.retopro.co/products/"
-                         "kodak-charmera-br-keychain-digital-camera-blind-box")
-            comment = ((exif.user_comment + "\n") if exif.user_comment else "") + note
+        # EXIF defines a focal length of 0 as unknown. A tag is only filled where it cannot
+        # contradict the other one, which may already hold the same advertised 35.
+        focal = 35.0 if not exif.focal_length and (exif.focal_length_35mm or 35) == 35 else None
+        focal_35mm = 35 if not exif.focal_length_35mm and (exif.focal_length or 35) == 35 else None
+        topics = {topic for topic, added in (
+            ("lens", lens_model), ("aperture", f_number), ("focal", focal or focal_35mm),
+            ("dates", dates_from_file_time)) if added}
+        comment = self._merge_note(exif.user_comment, topics) if topics else None
         return ExifFix(
             fixed_lens_model=lens_model,
             fixed_f_number=f_number,
@@ -104,11 +106,31 @@ class CameraScanner:
             fixed_datetime_original=dates[1],
             fixed_create_date=dates[2],
             dates_from_file_time=dates_from_file_time,
-            fixed_width=self._fix_dimension(exif.exif_image_width, exif.actual_image_width),
-            fixed_height=self._fix_dimension(exif.exif_image_height, exif.actual_image_height),
+            fixed_exif_image_width=self._fix_dimension(exif.exif_image_width, exif.actual_image_width),
+            fixed_exif_image_height=self._fix_dimension(exif.exif_image_height, exif.actual_image_height),
             fixed_make="Kodak" if exif.make != "Kodak" else None,
             fixed_model="Charmera" if exif.model != "Charmera" else None,
         )
+
+    @staticmethod
+    def _merge_note(user_comment: Optional[str], topics: set[str]) -> str:
+        """Append a fresh fixer note to the user's comment, replacing earlier fixer notes.
+
+        Fixer notes always occupy whole lines, so the user's text is kept as written.
+        Topics noted by an earlier run are carried over, since those values stay in place.
+        """
+        lines = (user_comment or "").split("\n")
+        user_text = "\n".join(line for line in lines if not line.startswith(_NOTE_PREFIX))
+        old_notes = " ".join(line for line in lines if line.startswith(_NOTE_PREFIX))
+        topics = topics | {topic for topic, markers in _NOTE_MARKERS.items()
+                           if any(marker in old_notes for marker in markers)}
+        note = _NOTE_PREFIX + "; ".join(
+            clause for topic, clause in _NOTE_CLAUSES.items() if topic in topics) + "."
+        if topics & {"lens", "aperture", "focal"}:
+            note += (" Manufacturer lists lens as 35mm F2.4. Source: "
+                     "https://www.kodak.retopro.co/products/"
+                     "kodak-charmera-br-keychain-digital-camera-blind-box")
+        return (user_text + "\n" if user_text else "") + note
 
     @staticmethod
     def _format_date(value: datetime) -> str:

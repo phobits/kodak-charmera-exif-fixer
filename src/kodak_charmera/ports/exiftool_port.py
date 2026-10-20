@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from pathlib import Path
 
 from ..core.models import ExifData
@@ -11,21 +12,6 @@ class ExiftoolPort(ABC):
         ...
 
     @abstractmethod
-    def write_exif(
-        self,
-        file_path: Path,
-        *,
-        modify_date: str | None = None,
-        datetime_original: str | None = None,
-        create_date: str | None = None,
-        exif_image_width: int | None = None,
-        exif_image_height: int | None = None,
-        make: str | None = None,
-        model: str | None = None,
-        lens_model: str | None = None,
-        f_number: float | None = None,
-        focal_length: float | None = None,
-        focal_length_35mm: int | None = None,
-        user_comment: str | None = None,
-    ) -> None:
+    def write_exif(self, file_path: Path, values: Mapping[str, object]) -> None:
+        """Write values keyed by ExifData field name (see EXIF_TAGS)."""
         ...

@@ -73,10 +73,11 @@ Set `NO_COLOR=1` to disable colors.
   `Model=Charmera`, replacing different values. Use this tool for Charmera photos;
   DCIM detection does not identify the camera model.
 - 🗓️ **Dates:** repairs formatting such as `2026:03:03:12:16:29` → `2026:03:03 12:16:29`.
-  Missing or placeholder dates (`0000:00:00 00:00:00`) are filled from another date of
-  the same photo; if the camera wrote none, from the source file's modification time,
-  noted in the EXIF user comment. It does not correct a wrongly set camera clock. Video
-  dates use the source file's modification time.
+  Missing or placeholder dates (`0000:00:00 00:00:00`) are filled from the photo's own
+  capture date (never from `ModifyDate`, which may be an edit time); if the camera wrote
+  none, from the source file's modification time, noted in the EXIF user comment. It
+  does not correct a wrongly set camera clock. Video dates use the source file's
+  modification time.
 - 🔎 **Lens:** fills missing lens identification and nominal **f/2.4** from the
   [manufacturer specifications](https://www.kodak.retopro.co/products/kodak-charmera-br-keychain-digital-camera-blind-box),
   recording provenance in the EXIF user comment. Existing lens/aperture values are

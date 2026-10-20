@@ -158,7 +158,7 @@ class SafeImportTests(unittest.TestCase):
         exif.read_exif.return_value = ExifData(exif_image_width=640)
         file = self.file()
         file.destination_path = file.source_path
-        file.exif_fix = ExifFix(fixed_width=1440)
+        file.exif_fix = ExifFix(fixed_exif_image_width=1440)
         with self.assertRaisesRegex(RuntimeError, 'EXIF verification'):
             ExifFixer(exif).fix(file)
 

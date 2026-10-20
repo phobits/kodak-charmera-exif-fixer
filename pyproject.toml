@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kodak-charmera-exif-fixer"
-version = "0.3.0"
+version = "0.3.1"
 description = "Fix EXIF metadata from Kodak Charmera camera and convert AVI to MP4"
 requires-python = ">=3.11"
 license = {text = "MIT"}

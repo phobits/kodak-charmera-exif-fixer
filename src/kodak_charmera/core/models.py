@@ -5,6 +5,25 @@ from datetime import datetime
 from typing import Optional
 
 
+# Writable EXIF fields: ExifData attribute -> exiftool tag. ExifFix holds the same names
+# with a "fixed_" prefix. A trailing "#" reads and writes the raw number instead of
+# exiftool's formatted text (e.g. 35.0 instead of "35.0 mm").
+EXIF_TAGS = {
+    "modify_date": "ModifyDate",
+    "datetime_original": "DateTimeOriginal",
+    "create_date": "CreateDate",
+    "exif_image_width": "ExifImageWidth",
+    "exif_image_height": "ExifImageHeight",
+    "make": "EXIF:Make",
+    "model": "EXIF:Model",
+    "lens_model": "EXIF:LensModel",
+    "f_number": "EXIF:FNumber",
+    "focal_length": "EXIF:FocalLength#",
+    "focal_length_35mm": "EXIF:FocalLengthIn35mmFormat#",
+    "user_comment": "EXIF:UserComment",
+}
+
+
 class FileType(Enum):
     PHOTO = "photo"
     VIDEO = "video"
@@ -43,8 +62,8 @@ class ExifFix:
     fixed_modify_date: Optional[str] = None
     fixed_datetime_original: Optional[str] = None
     fixed_create_date: Optional[str] = None
-    fixed_width: Optional[int] = None
-    fixed_height: Optional[int] = None
+    fixed_exif_image_width: Optional[int] = None
+    fixed_exif_image_height: Optional[int] = None
     fixed_make: Optional[str] = None
     fixed_model: Optional[str] = None
     fixed_lens_model: Optional[str] = None
@@ -55,22 +74,30 @@ class ExifFix:
     # Not a tag: marks dates above as taken from the file time rather than the camera.
     dates_from_file_time: bool = False
 
+    def values(self) -> dict[str, object]:
+        """Values to write, keyed like ExifData and EXIF_TAGS."""
+        return {name: value for name in EXIF_TAGS
+                if (value := getattr(self, f"fixed_{name}")) is not None}
+
     @property
     def has_fixes(self) -> bool:
-        return any([
-            self.fixed_modify_date,
-            self.fixed_datetime_original,
-            self.fixed_create_date,
-            self.fixed_width,
-            self.fixed_height,
-            self.fixed_make,
-            self.fixed_model,
-            self.fixed_lens_model,
-            self.fixed_f_number,
-            self.fixed_focal_length,
-            self.fixed_focal_length_35mm,
-            self.fixed_user_comment,
-        ])
+        return bool(self.values())
+
+    def labels(self) -> list[str]:
+        """Short descriptions of the fixes, shared by all presenters."""
+        names = self.values().keys()
+        labels = []
+        if names & {"lens_model", "f_number", "focal_length", "focal_length_35mm"}:
+            labels.append("lens: manufacturer data")
+        if names & {"make", "model"}:
+            labels.append("camera: Kodak Charmera")
+        if names & {"modify_date", "datetime_original", "create_date"}:
+            labels.append("date from file time" if self.dates_from_file_time else "date")
+        if names & {"exif_image_width", "exif_image_height"}:
+            labels.append("dimensions")
+        if not labels and "user_comment" in names:
+            labels.append("provenance note")
+        return labels
 
 
 @dataclass

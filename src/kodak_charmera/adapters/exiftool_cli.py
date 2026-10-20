@@ -1,8 +1,9 @@
 import json
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 
-from ..core.models import ExifData
+from ..core.models import EXIF_TAGS, ExifData
 from ..ports.exiftool_port import ExiftoolPort
 
 
@@ -13,35 +14,16 @@ class ExiftoolCliAdapter(ExiftoolPort):
 
     def read_exif(self, file_path: Path) -> ExifData:
         result = subprocess.run(
-            [
-                self._exe, "-json",
-                "-ImageWidth", "-ImageHeight",
-                "-ExifImageWidth", "-ExifImageHeight",
-                "-ModifyDate", "-DateTimeOriginal", "-CreateDate",
-                "-EXIF:Make", "-EXIF:Model",
-                "-EXIF:LensModel", "-EXIF:FNumber", "-EXIF:FocalLength#",
-                "-EXIF:FocalLengthIn35mmFormat#",
-                "-EXIF:UserComment",
-                str(file_path),
-            ],
+            [self._exe, "-json", "-ImageWidth", "-ImageHeight",
+             *(f"-{tag}" for tag in EXIF_TAGS.values()), str(file_path)],
             capture_output=True, text=True, check=True,
         )
         data = json.loads(result.stdout)[0]
         return ExifData(
-            modify_date=data.get("ModifyDate"),
-            datetime_original=data.get("DateTimeOriginal"),
-            create_date=data.get("CreateDate"),
-            exif_image_width=data.get("ExifImageWidth"),
-            exif_image_height=data.get("ExifImageHeight"),
             actual_image_width=data.get("ImageWidth"),
             actual_image_height=data.get("ImageHeight"),
-            make=data.get("Make"),
-            model=data.get("Model"),
-            lens_model=data.get("LensModel"),
-            f_number=data.get("FNumber"),
-            focal_length=data.get("FocalLength"),
-            focal_length_35mm=data.get("FocalLengthIn35mmFormat"),
-            user_comment=data.get("UserComment"),
+            **{name: data.get(tag.split(":")[-1].rstrip("#"))
+               for name, tag in EXIF_TAGS.items()},
         )
 
     def rebuild_exif(self, file_path: Path) -> None:
@@ -57,43 +39,11 @@ class ExiftoolCliAdapter(ExiftoolPort):
             capture_output=True, text=True, check=True,
         )
 
-    def write_exif(
-        self,
-        file_path: Path,
-        *,
-        modify_date: str | None = None,
-        datetime_original: str | None = None,
-        create_date: str | None = None,
-        exif_image_width: int | None = None,
-        exif_image_height: int | None = None,
-        make: str | None = None,
-        model: str | None = None,
-        lens_model: str | None = None,
-        f_number: float | None = None,
-        focal_length: float | None = None,
-        focal_length_35mm: int | None = None,
-        user_comment: str | None = None,
-    ) -> None:
+    def write_exif(self, file_path: Path, values: Mapping[str, object]) -> None:
         # Rebuild EXIF first to fix corrupt structure from Charmera
         self.rebuild_exif(file_path)
 
-        tag_map = {
-            "ModifyDate": modify_date,
-            "DateTimeOriginal": datetime_original,
-            "CreateDate": create_date,
-            "ExifImageWidth": exif_image_width,
-            "ExifImageHeight": exif_image_height,
-            "EXIF:Make": make,
-            "EXIF:Model": model,
-            "EXIF:LensModel": lens_model,
-            "EXIF:FNumber": f_number,
-            "EXIF:FocalLength": focal_length,
-            "EXIF:FocalLengthIn35mmFormat": focal_length_35mm,
-            "EXIF:UserComment": user_comment,
-        }
         args = [self._exe, "-overwrite_original"]
-        for tag, value in tag_map.items():
-            if value is not None:
-                args.append(f"-{tag}={value}")
+        args += [f"-{EXIF_TAGS[name]}={value}" for name, value in values.items()]
         args.append(str(file_path))
         subprocess.run(args, capture_output=True, text=True, check=True)
