@@ -1,130 +1,130 @@
-# Review und Optimierungsplan
+# Review and Improvement Plan
 
-> Historisches Review vor den anschließenden Änderungen. Inzwischen wurden unter
-> anderem Überschreib-Rückfragen, temporäre Verarbeitung und Ausgabeprüfung,
-> namensunabhängige Kartenerkennung, rekursiver Scan, Kamera-Tags und eine
-> kompakte CLI-Fortschrittsanzeige ergänzt. Die Tests liegen unter `tests/`.
-> Die folgenden Befunde und Prüfstandsangaben beschreiben den damaligen Stand,
-> nicht durchgehend den aktuellen Code; weitere Planungspunkte bleiben offen.
+> Historical review written before the subsequent changes. Since then, overwrite
+> prompts, temporary processing and output validation, label-independent card
+> discovery, recursive scanning, camera tags, capture-date and focal-length filling,
+> and a compact CLI progress display have been added, among other things. Tests live
+> in `tests/`. The findings and test-bench notes below describe the state at the time,
+> not necessarily the current code; further planning items remain open.
 
-Stand: 6. September 2026. Gegenstand ist der lokale Repository-Stand, ohne Änderungen am Anwendungscode und ohne Verarbeitung persönlicher Kameradateien.
+As of: 6 September 2026. Subject is the local repository state, without changes to the application code and without processing personal camera files.
 
-## Einschätzung
+## Assessment
 
-Die Trennung von Kernlogik, Werkzeug-Adaptern und Oberfläche ist eine brauchbare Grundlage. Ein kompletter Neubau ist nicht erforderlich. Vor einem regelmäßigen Import sollten jedoch Überschreibschutz, Fehlerbehandlung und die überprüfbare Korrektur von Metadaten umgesetzt werden.
+The separation of core logic, tool adapters and user interface is a usable foundation. A complete rewrite is not needed. Before regular imports, however, overwrite protection, error handling and verifiable metadata correction should be implemented.
 
-Für das konkrete Charmera-Problem ist entscheidend: Der aktuelle Code repariert bei Fotos lediglich ein bestimmtes Datumsformat und abweichende, bereits vorhandene EXIF-Abmessungen. Eine falsch eingestellte Kamerauhr, fehlende Datumswerte oder eine Zeitverschiebung korrigiert er nicht. Ob die Implementierung zu den tatsächlichen Defekten dieser Kamera passt, muss noch anhand unveränderter Beispieldateien geprüft werden.
+What matters for the concrete Charmera problem: for photos, the current code only repairs one particular date format and mismatched EXIF dimensions that are already present. It does not correct a wrongly set camera clock, missing date values or a time offset. Whether the implementation matches this camera's actual defects still has to be checked against unmodified sample files.
 
-## Befunde nach Priorität
+## Findings by Priority
 
-### P1: Vorhandene Videos können überschrieben werden
+### P1: Existing videos can be overwritten
 
-Stellen: `core/file_copier.py:25`, `core/video_converter.py:22`, `adapters/ffmpeg_cli.py:33`.
+Locations: `core/file_copier.py:25`, `core/video_converter.py:22`, `adapters/ffmpeg_cli.py:33`.
 
-Der Kopierer prüft nur den AVI-Zielnamen. Nach erfolgreicher Konvertierung wird die AVI-Kopie standardmäßig gelöscht. Beim nächsten Import ist dieser Name wieder frei, obwohl die MP4 noch vorhanden ist. Der Konverter verwendet denselben MP4-Namen und FFmpeg erhält `-y`. Dadurch wird die vorhandene MP4 überschrieben; auch verschiedene Videos mit gleichem Änderungszeitpunkt sind betroffen. Die Zielkollision wurde mit temporären Dateien und einem simulierten FFmpeg-Adapter reproduziert.
+The copier only checks the AVI target name. After a successful conversion the AVI copy is deleted by default. On the next import that name is free again, although the MP4 still exists. The converter uses the same MP4 name and FFmpeg is passed `-y`. The existing MP4 is therefore overwritten; different videos with the same modification time are affected too. The target collision was reproduced with temporary files and a simulated FFmpeg adapter.
 
-Abhilfe: Alle endgültigen Zielnamen vorab kollisionsfrei reservieren, vorhandene Ausgaben niemals implizit überschreiben und wiederholte Importe über Inhaltsprüfsummen erkennen. Bei parallelen Prozessen reicht eine bloße `exists()`-Prüfung nicht aus.
+Remedy: reserve all final target names collision-free up front, never overwrite existing outputs implicitly, and detect repeated imports via content checksums. With parallel processes a plain `exists()` check is not enough.
 
-### P1: Videokonvertierung kann dauerhaft hängen
+### P1: Video conversion can hang indefinitely
 
-Stelle: `adapters/ffmpeg_cli.py:46`.
+Location: `adapters/ffmpeg_cli.py:46`.
 
-Der Adapter liest stdout kontinuierlich, stderr jedoch erst nach Prozessende und nur bei Fehlern. Bei genügend Diagnoseausgabe kann die stderr-Pipe volllaufen: FFmpeg wartet auf einen Leser, während die Anwendung auf weiteren Fortschritt wartet. Es fehlen Timeout und geordnetes Beenden des Kindprozesses.
+The adapter reads stdout continuously, but stderr only after the process has ended and only on errors. With enough diagnostic output the stderr pipe can fill up: FFmpeg waits for a reader while the application waits for further progress. A timeout and an orderly shutdown of the child process are missing.
 
-Abhilfe: Beide Streams gleichzeitig abarbeiten oder stderr in eine temporäre Logdatei umleiten; begrenzte Diagnoseausgabe, Abbruchsignal und zuverlässiges Aufräumen ergänzen. Befund aus Codeprüfung, kein realer Langzeit-Konvertierungstest.
+Remedy: drain both streams concurrently or redirect stderr to a temporary log file; add bounded diagnostic output, a cancellation signal and reliable cleanup. Finding from code inspection, not from a real long-running conversion test.
 
-### P2: Ein einzelner Lesefehler verhindert den gesamten Import
+### P2: A single read error blocks the entire import
 
-Stelle: `core/scanner.py:32`.
+Location: `core/scanner.py:32`.
 
-Dateistatistik und EXIF-Lesen laufen ohne Fehlerbehandlung pro Datei. Bereits ein beschädigtes JPEG oder eine während des Scans entfernte Datei verhindert die Vorschau aller sonst lesbaren Dateien. Mit einem EXIF-Adapter reproduziert, der für eine Datei eine Exception auslöst.
+File stats and EXIF reading run without per-file error handling. A single corrupt JPEG, or a file removed during the scan, prevents the preview of all otherwise readable files. Reproduced with an EXIF adapter that raises an exception for one file.
 
-Abhilfe: Lesefehler pro Datei als Scan-Ergebnis sammeln; lesbare Dateien weiterhin anbieten. Fehlende Werkzeuge separat vor dem Scan melden.
+Remedy: collect read errors per file as part of the scan result; keep offering readable files. Report missing tools separately before the scan.
 
-### P2: Medien in DCIM-Unterordnern werden übersehen
+### P2: Media in DCIM subfolders are missed
 
-Stelle: `core/scanner.py:23`.
+Location: `core/scanner.py:23`.
 
-Der Scanner verwendet `list_files()` ohne Rekursion; der Dateisystemadapter hat standardmäßig `recursive=False`. Eine Datei unter `DCIM/100MEDIA/photo.jpg` ergibt deshalb null Treffer. Mit temporärer Verzeichnisstruktur reproduziert.
+The scanner calls `list_files()` without recursion; the filesystem adapter defaults to `recursive=False`. A file at `DCIM/100MEDIA/photo.jpg` therefore yields zero hits. Reproduced with a temporary directory structure.
 
-Abhilfe: Rekursiv und deterministisch scannen, Metadatendateien ausschließen und den Umgang mit Symlinks explizit festlegen.
+Remedy: scan recursively and deterministically, exclude metadata files, and define symlink handling explicitly.
 
-### P2: Strukturdefekte allein lösen keine EXIF-Reparatur aus
+### P2: Structural defects alone do not trigger an EXIF repair
 
-Stellen: `core/models.py:23`, `core/scanner.py:56`, `core/exif_fixer.py:12`.
+Locations: `core/models.py:23`, `core/scanner.py:56`, `core/exif_fixer.py:12`.
 
-EXIF-Warnungen und Strukturdefekte werden nicht im Datenmodell erfasst. Sind Datum und Abmessungen unauffällig, überspringt der Fixer die Verarbeitung vollständig, auch wenn ein Strukturdefekt vorliegt. Umgekehrt wird bei jeder einfachen Tagkorrektur die gesamte Metadatenstruktur neu aufgebaut. Nach dem Schreiben findet keine Kontrolle der tatsächlichen Tags statt.
+EXIF warnings and structural defects are not captured in the data model. If date and dimensions look fine, the fixer skips processing entirely, even when a structural defect is present. Conversely, every simple tag correction rebuilds the whole metadata structure. After writing, the actual tags are not checked.
 
-Abhilfe: Diagnose und Wertkorrekturen getrennt modellieren, Strukturreparatur gezielt auslösen und Metadaten vor/nach dem Schreiben vergleichen. Welche beschädigten Tags tatsächlich wiederherstellbar sind, ist an Originaldateien zu testen; ein vollständiger Erhalt ist bisher nicht nachgewiesen.
+Remedy: model diagnosis and value corrections separately, trigger structural repair deliberately, and compare metadata before and after writing. Which damaged tags can actually be recovered must be tested on original files; full preservation has not been demonstrated so far.
 
-### P2: Fehlerhafte Datumswerte werden als Korrektur vorgeschlagen
+### P2: Invalid date values are proposed as corrections
 
-Stelle: `core/scanner.py:66`.
+Location: `core/scanner.py:66`.
 
-Die Erkennung zählt lediglich durch Doppelpunkte getrennte Teile. Auch `2026:99:99:25:61:61` wird zu einem vermeintlich korrigierten Datum. Fehlende und bereits formal gültige, aber sachlich falsche Werte bleiben unverändert. Videos übernehmen ungeprüft die Dateimodifikationszeit als Aufnahmezeit; der Dateisystemadapter liefert dabei einen Zeitwert ohne Zeitzone.
+The detection only counts colon-separated parts. Even `2026:99:99:25:61:61` becomes a supposedly corrected date. Missing values, and values that are formally valid but factually wrong, stay unchanged. Videos take the file modification time as capture time without checks; the filesystem adapter returns a timestamp without a time zone.
 
-Abhilfe: Kalenderwerte streng validieren, Datumquelle und Unsicherheit anzeigen. Eine manuelle Uhrkorrektur und Kamerazeitzone vorsehen; bei unbekannter Aufnahmezeit keine Gewissheit vortäuschen. Video-Zeitmetadaten nach dem Schreiben mit explizit definierter Zeitzonenstrategie prüfen.
+Remedy: validate calendar values strictly, show the date source and its uncertainty. Provide a manual clock correction and camera time zone; do not pretend certainty when the capture time is unknown. Check video time metadata after writing, with an explicitly defined time-zone strategy.
 
-### P2: Automatisierung meldet trotz Verarbeitungsfehlern Erfolg
+### P2: Automation reports success despite processing errors
 
-Stellen: `core/pipeline.py:83`, `__main__.py:33`.
+Locations: `core/pipeline.py:83`, `__main__.py:33`.
 
-Die Pipeline sammelt Fehler, aber `_run_pipeline()` verwirft ihre Ergebnisse. Der CLI-Prozess kann bei fehlgeschlagenen Dateien normal mit Exitcode 0 enden. Auch ein leerer Scan wird nicht als Fehlerstatus weitergereicht.
+The pipeline collects errors, but `_run_pipeline()` discards its results. The CLI process can exit normally with exit code 0 when files failed. An empty scan is not passed on as an error status either.
 
-Abhilfe: Strukturiertes Gesamtergebnis und dokumentierte Exitcodes für Erfolg, Teilfehler und Startfehler. Abbruch durch den Benutzer getrennt behandeln.
+Remedy: a structured overall result and documented exit codes for success, partial failure and startup failure. Handle cancellation by the user separately.
 
-### P2: Fehleranzeige der GUI kann weitere UI-Aktualisierungen stoppen
+### P2: The GUI error display can stop further UI updates
 
-Stelle: `ui/tkinter_app.py:53`.
+Location: `ui/tkinter_app.py:53`.
 
-Der verzögert ausgeführte Lambda-Ausdruck greift auf die Exceptionvariable `e` zu. Diese wird nach dem `except`-Block von Python gelöscht. Wird der Callback danach ausgeführt, entsteht ein `NameError`; `_poll_queue()` fängt nur `queue.Empty` ab und plant dann keinen weiteren Poll ein.
+The deferred lambda accesses the exception variable `e`. Python deletes it after the `except` block. If the callback runs afterwards, a `NameError` is raised; `_poll_queue()` only catches `queue.Empty` and then schedules no further poll.
 
-Abhilfe: Fehlertext vorab speichern beziehungsweise an den Callback binden und die Queue-Verarbeitung gegen einzelne Callbackfehler absichern. Statisch geprüft; der aktive Python-Interpreter enthält kein `_tkinter`, daher kein GUI-Laufzeittest.
+Remedy: store the error text beforehand or bind it to the callback, and guard queue processing against individual callback errors. Checked statically; the active Python interpreter has no `_tkinter`, so no GUI runtime test.
 
-## Weitere Verbesserungspunkte
+## Further Improvements
 
-- `--dest` wird in der GUI durch deren fest eingebauten Standard und den beim Start ausgelesenen Wert übergangen. Oberfläche aus dem ProcessingPlan initialisieren.
-- Ohne erkannte Kamera wird die GUI-Meldung nur eingereiht und anschließend vor Start der Ereignisschleife beendet. Einen sichtbaren Leerzustand mit Quellenauswahl anbieten.
-- Quelle ist auf `/Volumes/Untitled/DCIM` festgelegt. `--source` und Ordnerauswahl ermöglichen auch SD-Karten mit anderem Namen sowie bereits kopierte Fotos.
-- Fenster schließen beendet den Hintergrundthread ohne kontrollierten Abbruch. Temporäre Ausgaben und Kindprozesse benötigen geregeltes Aufräumen.
-- Die Anwendung schreibt direkt in die endgültigen Dateien. Fehlgeschlagene Reparaturen können halbfertige Ergebnisse hinterlassen. AVI-Kopien werden ohne zusätzliche Ausgabeprüfung gelöscht.
-- Kein Schutz verhindert, dass ein gewähltes Ziel auf dem Kameravolume liegt. Das widerspricht dem dokumentierten Versprechen, dort nichts zu verändern.
-- Wiederholte Fotoimporte erzeugen immer weitere Kopien. Ein Importmanifest sollte Quellprüfsumme, Ziel, Reparaturversion und Ergebnis speichern.
-- Der LaunchAgent lädt seine Vorlage über einen Pfad außerhalb des Python-Pakets; die Paketkonfiguration enthält keine entsprechende Ressource. Wheel-Installation einschließlich Launcher testen und die Vorlage als Paketressource ausliefern.
-- Mehrere Konfigurationsfelder, etwa `dcim_subdir` und die Dateiendungen, werden vom Scanner nicht verwendet.
-- Pro Foto entstehen ein Leseprozess und bei Reparatur zwei Schreibprozesse. Erst nach Korrektheitsabsicherung messen und gegebenenfalls ExifTool-Batches einsetzen.
+- In the GUI, `--dest` is overridden by its built-in default and the value read at startup. Initialise the UI from the ProcessingPlan.
+- Without a detected camera, the GUI message is only queued and the app then exits before the event loop starts. Offer a visible empty state with source selection.
+- The source is fixed to `/Volumes/Untitled/DCIM`. `--source` and a folder picker would also allow SD cards with other names and photos that were already copied.
+- Closing the window ends the background thread without a controlled abort. Temporary outputs and child processes need orderly cleanup.
+- The application writes directly to the final files. Failed repairs can leave half-finished results. AVI copies are deleted without additional output validation.
+- Nothing prevents a chosen destination from lying on the camera volume. That contradicts the documented promise not to modify anything there.
+- Repeated photo imports keep producing further copies. An import manifest should store source checksum, target, repair version and result.
+- The LaunchAgent loads its template from a path outside the Python package; the package configuration contains no corresponding resource. Test a wheel installation including the launcher and ship the template as a package resource.
+- Several configuration fields, such as `dcim_subdir` and the file extensions, are not used by the scanner.
+- Each photo spawns one read process and, when repaired, two write processes. Measure only after correctness is secured, and use ExifTool batches if needed.
 
-## Umsetzungsplan
+## Implementation Plan
 
-### 1. Datenverlust und blockierende Prozesse verhindern
+### 1. Prevent data loss and blocking processes
 
-Kollisionsfreie Zielplanung für AVI und MP4, temporäre Arbeitsdateien, Veröffentlichung erst nach erfolgreicher Prüfung, geordneter Prozessabbruch und sichere stderr-Verarbeitung. Unveränderte Originalkopien zunächst behalten; Löschen als ausdrückliche Option anbieten. Quelle und Ziel vor Verarbeitung validieren.
+Collision-free target planning for AVI and MP4, temporary working files, publishing only after successful validation, orderly process cancellation and safe stderr handling. Keep unmodified original copies for now; offer deletion as an explicit option. Validate source and destination before processing.
 
-Abnahme: Zwei Videos mit gleichem Zeitstempel überschreiben sich nicht; ein erneuter Import verändert vorhandene Ausgaben nicht. Abbruch, voller Datenträger und Werkzeugfehler hinterlassen keine als fertig ausgewiesene Teildatei. Quellen bleiben bytegleich. Hohe stderr-Ausgabe führt nicht zum Stillstand.
+Acceptance: two videos with the same timestamp do not overwrite each other; a repeated import does not change existing outputs. Cancellation, a full disk and tool errors leave no partial file marked as finished. Sources stay byte-identical. Heavy stderr output does not cause a stall.
 
-### 2. EXIF-Reparatur fachlich absichern
+### 2. Make the EXIF repair sound
 
-Kleine Referenzsammlung unveränderter Charmera-JPEGs und AVIs erstellen. Rohmetadaten und Warnungen erfassen. Strenge Datumsvalidierung, explizite Datumsquelle, optionale Uhrkorrektur und Zeitzone implementieren. Strukturreparatur von Tagänderungen trennen und Ergebnisse erneut einlesen. Fehlende Dimensionen aus verifizierten Bilddimensionen ergänzen.
+Build a small reference set of unmodified Charmera JPEGs and AVIs. Record raw metadata and warnings. Implement strict date validation, an explicit date source, optional clock correction and time zone. Separate structural repair from tag changes and read the results back. Fill missing dimensions from verified image dimensions.
 
-Abnahme: Für jede Referenzdatei sind erwartete Änderungen festgelegt. Korrekte Metadaten bleiben erhalten; JPEG-Bilddaten werden nicht neu komprimiert. Ein zweiter Reparaturdurchlauf ergibt keine weiteren Änderungen. Unbekannte Aufnahmezeiten werden als ungeklärt angezeigt.
+Acceptance: expected changes are defined for every reference file. Correct metadata is preserved; JPEG image data is not recompressed. A second repair pass produces no further changes. Unknown capture times are shown as unresolved.
 
-### 3. Import im Alltag zuverlässig machen
+### 3. Make everyday imports reliable
 
-Freie Quellenauswahl, rekursiver Scan, Fehlerisolierung pro Datei, Abhängigkeitsprüfung, Importmanifest und Exitcodes umsetzen. Manifest erst nach validierter Veröffentlichung aktualisieren; fehlende oder veränderte Zielausgaben beim Wiederanlauf erkennen.
+Implement free source selection, recursive scanning, per-file error isolation, dependency checks, an import manifest and exit codes. Update the manifest only after validated publishing; detect missing or changed target outputs on restart.
 
-Abnahme: Umbenannte SD-Karte und lokaler Ordner funktionieren. Eine defekte Datei blockiert gesunde Dateien nicht. Wiederholung überspringt verifizierte Importe. Teilfehler sind für CLI-Automatisierung eindeutig erkennbar.
+Acceptance: a renamed SD card and a local folder work. A broken file does not block healthy files. A repeat run skips verified imports. Partial failures are unambiguous for CLI automation.
 
-### 4. Oberfläche und Auslieferung abrunden
+### 4. Round off the interface and distribution
 
-Vorschau mit alten/neuen Werten und Datumquelle, Dateiauswahl, sichtbare Einzelfehler, sicherer Abbruch und korrekter Übernahme des Zielordners. Paketressourcen und Launcher prüfen. Danach Laufzeiten an einer definierten Medienmenge messen und nur belegte Engpässe optimieren.
+Preview with old/new values and date source, file selection, visible per-file errors, safe cancellation and correct use of the destination folder. Check package resources and the launcher. Then measure run times on a defined set of media and optimise only proven bottlenecks.
 
-Abnahme: Quelle, Ziel und geplante Änderungen sind vor Start sichtbar. Fehler legen die Oberfläche nicht still. Installation aus einem gebauten Wheel funktioniert unabhängig vom Repository-Verzeichnis.
+Acceptance: source, destination and planned changes are visible before starting. Errors do not freeze the interface. Installation from a built wheel works independently of the repository directory.
 
-## Prüfstand und Grenzen
+## Test Bench and Limits
 
-- Gesamter Python-Anwendungscode, README, Paketkonfiguration und LaunchAgent-Konfiguration gelesen.
-- `python3 -m unittest discover -v`: 0 Tests; `tests/` enthält nur `__init__.py`.
-- Temporäre Reproduktionen für MP4-Zielkollision, fehlende Ausgabeprüfung vor AVI-Löschung, nichtrekursiven Scan, Scanabbruch und unzureichende Datumsvalidierung ausgeführt. Externe Adapter dabei simuliert.
-- ExifTool, FFmpeg und ffprobe sind lokal vorhanden, wurden in diesem Review aber nicht mit echten Kameradateien validiert.
-- GUI-Ausführung wegen fehlendem `_tkinter` im aktiven Python nicht möglich. Keine Aussage über bereits erfolgreich getestete GUI- oder Medienintegration.
-- Keine Änderungen am Anwendungscode; dieses Dokument hält Review und Planung fest.
+- Read all Python application code, the README, the package configuration and the LaunchAgent configuration.
+- `python3 -m unittest discover -v`: 0 tests; `tests/` only contains `__init__.py`.
+- Ran temporary reproductions for the MP4 target collision, missing output validation before AVI deletion, the non-recursive scan, the scan abort and insufficient date validation, with external adapters simulated.
+- ExifTool, FFmpeg and ffprobe are installed locally, but were not validated with real camera files in this review.
+- GUI execution was not possible because the active Python lacks `_tkinter`. No statement about GUI or media integration that may already have been tested successfully.
+- No changes to the application code; this document records the review and the plan.
